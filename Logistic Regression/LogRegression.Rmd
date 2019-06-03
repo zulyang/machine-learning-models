@@ -1,0 +1,739 @@
+---
+title: "ACCT419_G1_STATSPROG"
+output: html_document
+---
+
+Install & load relevant libraries
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr, plyr, ggplot2, readr, plotly, lubridate, qdapTools, cluster, rpart, rpart.plot, pROC, e1071, caret, mltools, C50, randomForest, clustMixType, reshape2, neuralnet, ROSE)
+```
+
+1. Importing data
+``` {r}
+# don't display scientific notations i.e. E
+options(scipen = 999)
+
+lux.raw <- read_csv("luxehorecaFSA.csv",
+                       col_types = cols(CLM_DT = col_date(format="%d/%m/%y"),
+                                        RCPT_DT = col_date(format="%d/%m/%y"),
+                                        REIMB_DT = col_date(format="%d/%m/%y"),
+                                        EA_DT = col_date(format="%d/%m/%y")
+                                        )
+                       )
+```
+
+2. Selecting data
+``` {r}
+# Birth & MIIS do not have FLEXI_TYPE
+# Assign Birth to an integer [9] & MIIS to [10]
+birth.index <- lux.raw$FSA_TYP == "BIRT"
+miis.index <- lux.raw$FSA_TYP == "MIIS"
+
+lux.raw[birth.index,]$FLEXBEN_TYPE <- 9
+lux.raw[miis.index,]$FLEXBEN_TYPE <- 10
+
+lux.raw.sel <- lux.raw %>%
+                  mutate(DAYSTO_CLAIM = as.numeric(CLM_DT - RCPT_DT), 
+                         DAYSTO_REIMBURSE = as.numeric(REIMB_DT - CLM_DT))
+
+#Add the labels to the dataset for easy manipulation
+
+lux.raw.sel$FLEXBEN_TYPE_CAT<- mapvalues(lux.raw.sel$FLEXBEN_TYPE, from = c(1,2,3,4,5,6,7,8,9,10),
+                                         to = c("IT equipment and accessories", 
+                                                "Childcare Expenses",
+                                                "Personal Wellness",
+                                                "Vacation Expenses",
+                                                "Family Insurance Expenses",
+                                                "Personal & Work-life-enrichment",
+                                                "Telephone Subscriptions",
+                                                "Professional Memberships Fees",
+                                                "Birthday",
+                                                "Medical Insurance"))
+```
+
+3. Exploratory Data Analysis
+```{r}
+
+#1. Range of the dataset
+min(lux.raw.sel$CLM_DT)
+max(lux.raw.sel$CLM_DT)
+
+min(lux.raw.sel$RCPT_DT)
+max(lux.raw.sel$RCPT_DT)
+
+#2. Overview of Claims
+ggplot(lux.raw.sel, aes(x= lux.raw.sel$FSA_TYP,fill = factor(lux.raw.sel$FLEXBEN_TYPE_CAT))) + geom_bar(stat = "count")  + stat_count(aes(label = ..count..), geom = "text", size = 3, position = position_stack(vjust = 0.5)) + ggtitle ("Breakdown by FSA Type") + xlab("Title") + ylab("Total count") + labs(fill = "Benefit Type") 
+
+detach(package:plyr)
+ggplot(lux.raw.sel %>% count(FSA_TYP, FLEXBEN_TYPE_CAT) %>%   
+         mutate(pct=n/sum(n)), aes(FSA_TYP, n, fill= FLEXBEN_TYPE_CAT)) +
+  geom_bar(stat="identity") +  geom_text(aes(label=paste0(sprintf("%1.1f", pct*100),"%")),position=position_stack(vjust=0.5)) + ggtitle ("Claims Overview") + xlab("Type") + ylab("Total count") + labs(fill = "Benefit Type") 
+
+#4. Overview of claims By Months
+ggplot(lux.raw.sel, aes(x= month(lux.raw.sel$CLM_DT, label=TRUE, abbr=TRUE), group=lux.raw.sel$CLM_YR, colour=factor(lux.raw.sel$CLM_YR))) +  geom_line(stat="count") + geom_point(stat = "count") + ggtitle("Claims Annual & Monthly Breakdown") + labs(x="", colour="Year") 
+
+#5. Overview of receipts by Months
+ggplot(lux.raw.sel, aes(x= month(lux.raw.sel$RCPT_DT, label=TRUE, abbr=TRUE), group= year(lux.raw.sel$RCPT_DT), colour=factor(year(lux.raw.sel$RCPT_DT)))) +  geom_line(stat="count") + geom_point(stat = "count") + ggtitle("Receipts Annual & Monthly Breakdown") + labs(x="", colour="Year") 
+
+#6a. When Do Your Employees Like To Buy Things? - Grouped By Day Tag                        
+ggplot(lux.raw.sel, aes(x= lux.raw.sel$RCPT_DAY, fill = factor(lux.raw.sel$DAY_TAG))) + geom_bar(stat = "count")  + stat_count(aes(label = ..count..), geom = "text", size = 3, position = position_stack(vjust = 0.5)) + ggtitle ("When Do Your Employees Like To Buy Things?") + xlab("Day") + ylab("Total count") + labs(fill = "Day Tag") 
+
+#6b. - Grouped By Type
+ggplot(lux.raw.sel, aes(x= lux.raw.sel$RCPT_DAY, fill = factor(lux.raw.sel$FLEXBEN_TYPE_CAT))) + geom_bar(stat = "count")  + stat_count(aes(label = ..count..), geom = "text", size = 3, position = position_stack(vjust = 0.5)) + ggtitle ("When Do Your Employees Like To Buy Things?") + xlab("Day") + ylab("Total count") + labs(fill = "Type") 
+
+#7. When Do Your Employees Like To Claim Things?        
+ggplot(lux.raw.sel, aes(x= wday(lux.raw.sel$CLM_DT,label = TRUE), fill = factor(lux.raw.sel$FLEXBEN_TYPE_CAT))) + geom_bar(stat = "count")  + stat_count(aes(label = ..count..), geom = "text", size = 3, position = position_stack(vjust = 0.5)) + ggtitle ("When Do Your Employees Like To Claim?") + xlab("Day") + ylab("Total count") + labs(fill = "Benefit Type") 
+
+#7b. 
+ggplot(lux.raw.sel %>% group_by(FLEXBEN_TYPE_CAT) %>% count(FLEXBEN_TYPE_CAT, DAY_TAG) %>%   
+       mutate(pct=n/sum(n)), aes(FLEXBEN_TYPE_CAT, n, fill=DAY_TAG)) +
+geom_bar(stat="identity") +  geom_text(aes(label=paste0(sprintf("%1.1f", pct*100),"%")), 
+          position=position_stack(vjust=0.5)) + coord_flip() +ggtitle ("Grouped By Day Tags") + xlab("Type") + ylab("Count") + labs(fill = "Day Tag")
+
+#8a. How Long Do Your Employees Take To Claim?
+ggplot(lux.raw.sel, aes(x= lux.raw.sel$DAYSTO_CLAIM,label= TRUE)) + geom_bar(stat = "count", fill = "lightsalmon1")  + stat_count(aes(label = ..count..), geom = "text", size = 3, position = position_stack(vjust = 0.5), angle = 90) + ggtitle ("How Long Do Your Employees Take To Claim?") + xlab("Number of Days") + ylab("Total count")
+
+#8b. - Grouped By Type
+ggplot(lux.raw.sel, aes(x= lux.raw.sel$DAYSTO_CLAIM,label= TRUE, fill = factor(lux.raw.sel$FLEXBEN_TYPE_CAT))) + geom_bar(stat = "count") + ggtitle("How Long Do Your Employees Take To Claim?") + xlab("Number of Days") + ylab("Total count")+ labs(fill = "Flex Benefit Type")
+
+median(lux.raw.sel$DAYSTO_CLAIM)
+mean(lux.raw.sel$DAYSTO_CLAIM)
+max(lux.raw.sel$DAYSTO_CLAIM)
+min(lux.raw.sel$DAYSTO_CLAIM)
+sum(lux.raw.sel$DAYSTO_CLAIM >31)
+
+#9a. How Long Do Your Employees Have To Wait To Be Reimbursed?
+ggplot(lux.raw.sel, aes(x= lux.raw.sel$DAYSTO_REIMBURSE)) + geom_bar(stat = "count" , fill = "steelblue3")+ stat_count(aes(label = ..count..), geom = "text", size = 3, position = position_stack(vjust = 0.5), angle = 90) + ggtitle ("How Long Do Your Employees Have To Wait To Be Reimbursed??") + xlab("Number of Days") + ylab("Total count") 
+
+#9b. -Grouped By Type
+ggplot(lux.raw.sel, aes(x= lux.raw.sel$DAYSTO_REIMBURSE , fill = factor(lux.raw.sel$FLEXBEN_TYPE_CAT))) + geom_bar(stat = "count")+ ggtitle ("How Long Do Your Employees Have To Wait To Be Reimbursed??") + xlab("Number of Days") + ylab("Total count") + labs(fill = "Flex Benefit Type")
+
+median(lux.raw.sel$DAYSTO_REIMBURSE)
+max(lux.raw.sel$DAYSTO_REIMBURSE)
+min(lux.raw.sel$DAYSTO_REIMBURSE)
+mean(lux.raw.sel$DAYSTO_REIMBURSE)
+
+sum(lux.raw.sel$DAYSTO_REIMBURSE <30)
+
+#10a. #How Much Do Your Employees Claim? 
+total <- lux.raw.sel %>%
+    group_by(lux.raw.sel$FLEXBEN_TYPE_CAT) %>%
+    summarize(total = sum(CLM_AMT)) 
+
+#Percentages
+totals <- aggregate(CLM_AMT  ~  FLEXBEN_TYPE_CAT, lux.raw.sel, sum)
+options(digits = 3)
+x <- (totals$CLM_AMT)/(total$total) * 100
+
+#Plot
+ggplot(lux.raw.sel, aes(lux.raw.sel$FSA_TYP, lux.raw.sel$CLM_AMT, fill = lux.raw.sel$FLEXBEN_TYPE_CAT)) + geom_col() + ggtitle ("How Much Do Your Employees Claim?") + xlab("Type") + ylab("Amount ($)") + labs(fill = "Flex Benefit Type")
+
+ 
+#11. What Do They Claim On? 
+ggplot(lux.raw.sel, aes(lux.raw.sel$CLM_AMT , fill = lux.raw.sel$FLEXBEN_TYPE_CAT)) + geom_histogram(breaks=seq(0, 500, by=10)) + ggtitle ("What Do They Claim On?") + xlab("Claim Amount ($)") + ylab("Count") + labs(fill = "Flex Benefit Type")
+
+sum(lux.raw.sel$CLM_AMT >=450)
+sum(lux.raw.sel$CLM_AMT <= 100)
+sum(lux.raw.sel$CLM_AMT == 500)
+
+lux.raw.sel.flexi <- lux.raw.sel[ which(lux.raw.sel$FSA_TYP=='FLXI'), ]
+lux.raw.sel.birt <- lux.raw.sel[ which(lux.raw.sel$FSA_TYP=='BIRT'), ]
+lux.raw.sel.miis <- lux.raw.sel[ which(lux.raw.sel$FSA_TYP=='MIIS'), ]
+
+#12. Amounts for Birthday
+ggplot(lux.raw.sel.birt, aes(lux.raw.sel.birt$CLM_AMT)) + geom_histogram(breaks=seq(0, 40, by=1), position = position_stack(), fill = "lightsalmon") + ggtitle ("Amount Spent For Birthday Claims") + xlab("Claim Amount ($)") + ylab("Count") +stat_count()
+
+sum(lux.raw.sel.birt$CLM_AMT> 30)
+median(lux.raw.sel.birt$CLM_AMT)
+max(lux.raw.sel.birt$CLM_AMT)
+min(lux.raw.sel.birt$CLM_AMT)
+mean(lux.raw.sel.birt$CLM_AMT)
+
+#13. Amounts for Medical 
+ggplot(lux.raw.sel.miis, aes(lux.raw.sel.miis$CLM_AMT)) + geom_histogram(breaks=seq(0, 120, by=10), position = position_stack(), fill = "steelblue") + ggtitle ("Amount Spent For Medical Insurance") + xlab("Claim Amount ($)") + ylab("Count")
+
+sum(lux.raw.sel.miis$CLM_AMT > 100)
+median(lux.raw.sel.miis$CLM_AMT)
+max(lux.raw.sel.miis$CLM_AMT)
+min(lux.raw.sel.miis$CLM_AMT)
+mean(lux.raw.sel.miis$CLM_AMT)
+
+#13. Amounts for Flexible Benefits 
+ggplot(lux.raw.sel.flexi, aes(lux.raw.sel.flexi$CLM_AMT, fill = lux.raw.sel.flexi$FLEXBEN_TYPE_CAT)) + geom_histogram(breaks=seq(0, 550, by=50)) + ggtitle ("Amount Spent For Flexible Benefits") + xlab("Claim Amount ($)") + ylab("Count") + labs(fill = "Day Tag") 
+
+median(lux.raw.sel.flexi$CLM_AMT)
+max(lux.raw.sel.flexi$CLM_AMT)
+min(lux.raw.sel.flexi$CLM_AMT)
+mean(lux.raw.sel.flexi$CLM_AMT)
+sum(lux.raw.sel.flexi$CLM_AMT >=450)
+
+medians <- aggregate(CLM_AMT  ~  FLEXBEN_TYPE_CAT, lux.raw.sel, median)
+library(plyr)
+p_meds <- ddply(lux.raw.sel, .(FLEXBEN_TYPE_CAT), summarise, med = median(CLM_AMT))
+
+#14. Box Plot Diagram
+ggplot(lux.raw.sel, aes(x=lux.raw.sel$FLEXBEN_TYPE_CAT, y=lux.raw.sel$CLM_AMT,fill= lux.raw.sel$FLEXBEN_TYPE_CAT)) + geom_boxplot() + coord_flip() + labs(title="Plot of Amount per Type",x="Type", y = "Amount ($)", fill = "Type")
+
+#Medians
+medians <- aggregate(CLM_AMT  ~  FLEXBEN_TYPE_CAT, lux.raw.sel, median)
+
+#END OF EDA
+```
+
+4. Data Preparation
+```{r}
+# Create dataframe to merge after clustering, taking only columns that are relevant
+merge.var <- c("EMP_ID","CLM_REF","FSA_TYP","FLEXBEN_TYPE","CLM_DT","CLM_AMT","RCPT_DT","RCPT_DAY","DAY_TAG","REIMB_DT", "EA_DT")
+lux.merge <- lux.raw %>% 
+                  select(merge.var)
+
+# Select variables to be use for clustering
+sel.var <- c("FSA_TYP","FLEXBEN_TYPE","CLM_DT","CLM_AMT","RCPT_DT","RCPT_DAY","DAY_TAG","REIMB_DT", "EA_DT")
+lux.df <- lux.raw %>% 
+                  select(sel.var)
+
+# Converting dates into intervals
+lux.sel <- lux.df %>%
+                  mutate(DAYSTO_CLAIM = as.numeric(CLM_DT - RCPT_DT), 
+                         DAYSTO_REIMBURSE = as.numeric(REIMB_DT - CLM_DT))
+
+lux.merge <- lux.merge %>%
+                  mutate(DAYSTO_CLAIM = as.numeric(CLM_DT - RCPT_DT), 
+                         DAYSTO_REIMBURSE = as.numeric(REIMB_DT - CLM_DT))
+
+# Create variable to rename weekdays (Monday to be the start of the week == 1)
+# Creating lookup table of weekdays variables
+weekdays = c('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday')
+weekdays2 = c(7,1,2,3,4,5,6) 
+RCPT.DY <- data.frame(weekdays,weekdays2)
+
+# Creating lookup table of categorical variables
+#DAY [1 - WEEKDAY, 2 - WEEKEND, 3 - HOLIDAY]
+DAY.TAG <- data.frame(unique(lux.sel$DAY_TAG),
+                    c(1:length(unique(lux.sel$DAY_TAG))))
+
+# Using %l% as a lookup function for matching
+RCPT.DY.N <- data.frame(lux.sel$RCPT_DAY %l% RCPT.DY)
+colnames(RCPT.DY.N) <- "RCPT.DY.N"
+
+DAY.TAG.N <- data.frame(lux.sel$DAY_TAG %l% DAY.TAG)
+colnames(DAY.TAG.N) <- "DAY.TAG.N"
+
+EA.DT.N <- c(rep(0, nrow(lux.sel)))
+EA.DT.N[!is.na(lux.sel$EA_DT)] <- 1
+EA.DT.N <- data.frame(EA.DT.N = EA.DT.N)
+
+
+# Remove date columns
+# Remove categorical and replace with integer encoded columns
+drop.col <- c("FSA_TYP", "CLM_DT", "RCPT_DT", "RCPT_DAY", "DAY_TAG", "REIMB_DT", "EA_DT")
+
+lux.clean <-
+  lux.sel %>%
+  select(-drop.col) %>%
+  bind_cols(RCPT.DY.N, DAY.TAG.N, EA.DT.N)
+
+lux.merge <-
+  lux.merge %>%
+  bind_cols(RCPT.DY.N, DAY.TAG.N, EA.DT.N)
+
+# Convert categorical columns to factors
+lux.clean.factored.sel <- lux.clean[, c(1, 5, 6, 7)]
+lux.clean.factored.sel$FLEXBEN_TYPE = as.factor(lux.clean$FLEXBEN_TYPE)
+lux.clean.factored.sel$RCPT.DY.N = as.factor(lux.clean$RCPT.DY.N)
+lux.clean.factored.sel$DAY.TAG.N = as.factor(lux.clean$DAY.TAG.N)
+lux.clean.factored.sel$EA.DT.N = as.factor(lux.clean$EA.DT.N)
+
+```
+
+5. Clustering (Elbow Plot): Determine optimal number of clusters
+```{r}
+
+# kproto
+# Normalisation needs to be done to change huge ranges to uniform scales and to make sure its scale dependent
+lux.norm.factored <- cbind.data.frame(lux.norm[, c(2, 3, 4)], lux.clean.factored.sel)
+
+# Use elbow plot to determine optimal number of K
+set.seed(11)
+# Max 15 clusters is optimal
+k.max <- 15
+wss <- (nrow(lux.norm.factored)-1)*sum(apply(lux.norm.factored,2,var))
+for (i in 2:k.max) wss[i] <- sum(kproto(lux.norm.factored,
+                                        k=i,
+                                        iter.max = 15,
+                                        algorithm = "Hartigan-Wong")$withinss)
+
+plot(1:k.max, wss, type="b", xlab="Number of Clusters K",
+     ylab="Total within-cluster sum of squares",
+     main="Elbow Plot to find Optimal Number of Clusters (kproto)",
+     pch=19, cex=1)
+abline(v = 8, lty = 2)
+
+```
+
+6. Clustering
+``` {r}
+
+# Assign optimal clusters to k
+k <- 8
+
+# K-proto clustering with k clusters
+kp <- kproto(lux.norm.factored, k)
+
+# Assign Cluster Numbers to dataset
+kp.clustn <- data.frame(kp$cluster)
+colnames(kp.clustn) <- "Cluster.N"
+  
+# cbind dataset to df of cluster membership
+lux.kp.clustn <- cbind.data.frame(lux.merge, kp.clustn) 
+clusplot(lux.norm.factored, kp$cluster, main='2D representation of the Cluster solution (kproto)',
+         color=TRUE, shade=TRUE,
+         labels=2, lines=1)
+```
+
+7. Cluster Profiling
+``` {r}
+# Cluster Profiling for kmeans
+profile.km.df <- data.frame(km$centers)
+profile.km.df$clusters <- rownames(profile.km.df)
+profile.km.df <- melt(profile.km.df, id.vars=c("clusters"))
+
+ggplot(profile.km.df, aes(x=profile.km.df$variable , y=value, group=profile.km.df$clusters, color = profile.km.df$clusters, group=1 )) + 
+  geom_line() + 
+  labs(x = "Variables", 
+       y = "Cluster Centroids", 
+       title ="K-Means Cluster Profiling",
+       color = "Cluster")
+
+# Cluster Profiling for kproto
+profile.kp.df <- data.frame(kp$centers)
+profile.kp.df <- profile.kp.df %>%
+  select(CLM_AMT, DAYSTO_CLAIM, DAYSTO_REIMBURSE)
+
+profile.kp.df$clusters <- rownames(profile.kp.df)
+profile.kp.df <- melt(profile.kp.df, id.vars=c("clusters"))
+
+ggplot(profile.kp.df, aes(x=profile.kp.df$variable , y=value, group=profile.kp.df$clusters, color = profile.kp.df$clusters, group=1 )) + 
+  geom_line() +
+    labs(x = "Variables", 
+       y = "Cluster Centroids", 
+       title ="K-Proto Cluster Profiling",
+       color = "Cluster")
+
+
+```
+
+
+8. Distance Calculations of Observation to Cluster Centers
+```{r}
+# Calculate distances between observations and cluster centers
+km.centers <- km$centers[km$cluster,]
+km.dist <- sqrt(rowSums((lux.norm - km.centers)^2))
+
+# Calculate mean distances by its own cluster
+mdist.km <- tapply(km.dist, km$cluster, mean)
+
+# Divide each distance by the mean for its cluster:
+distscore.km <- km.dist/(mdist.km[km$cluster])
+
+# Coercing it into a dataframe
+distfact.km <- data.frame(distscore.km) 
+colnames(distfact.km) <- "DIST.FACTOR"
+
+# Distance Score Percentile
+scoreperc.km <- data.frame(distscore.km/(max(distscore.km) - min(distscore.km)))
+colnames(scoreperc.km) <- "SCORE.PERC"
+
+# Dataframe of dataset with cluster #, distance score, distance score percentile
+lux.clustdn <- cbind.data.frame(lux.clustn, distfact.km, scoreperc.km)
+
+
+#kproto
+# Calculate distances between observations and cluster centers
+kp.centers <- kp$centers[kp$cluster,]
+kp.dist <- c()
+for(i in 1:nrow(kp$dists)){
+  kp.dist[i] <- kp$dists[i, kp$cluster[i]]
+}
+
+# Calculate mean distances by its own cluster
+mdist.kp <- tapply(kp.dist, kp$cluster, mean)
+
+# Divide each distance by the mean for its cluster:
+distscore.kp <- kp.dist/(mdist.kp[kp$cluster])
+
+# Coercing it into a dataframe
+distfact.kp <- data.frame(distscore.kp) 
+colnames(distfact.kp) <- "DIST.FACTOR"
+
+# Distance Score Percentile
+scoreperc.kp <- data.frame(distscore.kp/(max(distscore.kp) - min(distscore.kp)))
+colnames(scoreperc.kp) <- "SCORE.PERC"
+
+# Dataframe of dataset with cluster #, distance score, distance score percentile
+lux.kp.clustdn <- cbind.data.frame(lux.kp.clustn, distfact.kp, scoreperc.kp)
+
+```
+
+
+9. Top N Outliers
+``` {r}
+# Outliers (Top n)
+n <- nrow(lux.kp.clustdn) * 0.1  #Determine n
+
+# Order datapoints by distance from cluster centers
+kp.distorder <- order(distscore.kp, decreasing = T) 
+lux.kp.clustdn.order <- lux.kp.clustdn[kp.distorder,]
+lux.kp.clustdn.order$rank <- rank(-lux.kp.clustdn.order$SCORE.PERC)
+
+# Plot graph showing outliers
+TopNChart<- plot(x=lux.kp.clustdn.order$SCORE.PERC,
+     y=lux.kp.clustdn.order$DIST.FACTOR,
+     main="Outliers based on Top N (kproto)",
+     xlab="Distance Score Percentile",
+     ylab="Distance Score",
+     col=ifelse(lux.kp.clustdn.order$rank <= n, "#DC143C", "#228B22"),
+     pch=18)
+
+kp.topN.outliers <- data.frame(lux.kp.clustdn.order[lux.kp.clustdn.order$rank <= n, ])
+
+lux.kp.clustdn.order.unsupervised.labelled <- lux.kp.clustdn.order %>% mutate(unsupervised.label = ifelse(CLM_REF %in% kp.topN.outliers$CLM_REF,1,0))
+```
+
+10. Interpretation of results
+```{r}
+# Count employee who made claims more than once in Top N Outliers
+#test<- km.topN.outliers %>% group_by(EMP_ID) %>% count(EMP_ID) 
+#test<- filter(test, n>1)
+
+#summary(lux.merge)
+#summary(km.topN.outliers)
+
+#exporting top 5 outliers as csv
+write.csv(kp.topN.outliers, file = "TopNOutliers.csv",row.names = FALSE)
+```
+
+11. Merge validated data and partition
+```{r}
+#import validated data
+lux.validated <- read_csv("luxehorecaFSA(validated).csv",
+                       col_types = cols(CLM_DT = col_date(format="%d/%m/%y"),
+                                        RCPT_DT = col_date(format="%d/%m/%y"),
+                                        REIMB_DT = col_date(format="%d/%m/%y"),
+                                        EA_DT = col_date(format="%d/%m/%y")
+                                        )
+                       )
+#get number of risky or non risky claims
+risk.summ <- data.frame("risky"=length(lux.validated$RISK[lux.validated$RISK == 1]),
+                        "safe"=length(lux.validated$RISK[lux.validated$RISK == 0]))
+
+lux.risk.labels <- lux.validated %>% select("CLM_REF","RISK")
+
+#left join base on CLM_REF
+lux.risk <- left_join(lux.clustdn,lux.risk.labels, by = "CLM_REF")
+
+set.seed(11)
+#70-30 split (70% training, 30% testing) research paper findings
+lux.risk <- lux.risk[c(4,6,12:16,20)]
+training.index <- sample(c(1:nrow(lux.risk)),0.7*nrow(lux.risk))
+training.df <- lux.risk[training.index, ]
+testing.df <- lux.risk[-training.index, ]
+
+```
+
+12. Data Balancing
+```{r}
+#Oversampling
+library(ROSE)
+
+#get number of risky or non risky claims in training set
+training.summ <- data.frame("risky"=length(training.df$RISK[training.df$RISK == 1]),
+                        "safe"=length(training.df$RISK[training.df$RISK == 0]))
+
+#oversample
+training.balanced.df <- ovun.sample(RISK ~., data = training.df, 
+                                    method = "over", 
+                                    N = training.summ$safe * 2)$data
+
+
+
+training.df <- training.balanced.df
+
+```
+
+13. Unsupervised Learning results
+```{r}
+# combine kproto result with labels on CLM_REF
+lux.kp.clustdn.order.cm <- left_join(lux.kp.clustdn.order.unsupervised.labelled,lux.risk.labels, by = "CLM_REF")
+
+# plot a graph of unsupervised learning with risky claims highlighted for kproto
+TopNChart<- plot(x=lux.kp.clustdn.order.cm$SCORE.PERC,
+     y=lux.kp.clustdn.order.cm$DIST.FACTOR,
+     main="Outliers based on Top N (kproto)",
+     xlab="Distance Score Percentile",
+     ylab="Distance Score",
+     col=ifelse(lux.kp.clustdn.order.cm$RISK == 1, "#DC143C", "#228B22"),
+     pch=18)
+
+# build a confusion matrix of top kproto outliers with risky claims
+confusionMatrix(table(lux.kp.clustdn.order.cm$RISK,
+                      lux.kp.clustdn.order.cm$unsupervised.label),
+                positive = "1")
+
+
+
+
+```
+
+14. Classification Tree
+```{r}
+# Run Classification Tree using rpart() function
+# Use rpart.control() as control argument to determine the tree depth
+#maxdepth is 2, after changing to 3 it will still be 2 as the algo finds the fastest way to split the tree as CP is default
+
+lux.tree <- rpart(RISK ~.,
+                    data = training.df,
+                    method = "class")
+
+# Plot Classification Tree using prp() function
+# plotting parameters like colour and shape can be controlled as can the positioning
+#plot recursive partitioning prp
+
+prp(lux.tree,
+    type = 1,
+    extra = 1,
+    split.font = 1,
+    varlen = -10)
+
+print(lux.tree)
+
+# predict on test set
+lux.pred.test <- predict(lux.tree,
+                                 testing.df,
+                                 type = "class")
+
+# generate confusion matrix
+confusionMatrix(table(lux.pred.test,
+                      testing.df$RISK),
+                positive = "1")
+
+# Obtain ROC for recursive partition
+lux.rpart.pred.prob <- predict(lux.tree,
+                                 testing.df,
+                                 type = "prob")
+rpart.combined = cbind(testing.df, lux.rpart.pred.prob)
+
+lux.rpart.ROC<-plot.roc(rpart.combined$RISK,
+                    rpart.combined$`1`,
+                    main = "ROC for rpart")
+print(lux.rpart.ROC) # Display ROC curve of rpart model
+
+
+# Run a random forest classification
+lux.randomf <-randomForest(as.factor(RISK)~.,
+                          data = training.df,
+                          ntree = 500,
+                          mtry = 6,
+                          nodesize = 5,
+                          importance = TRUE)
+
+
+# scoring variable importance
+#type 2 uses GINI(importance, information gainx) as the measure, type 1 MDA(accuracy)
+varImpPlot(lux.randomf,type = 1)
+
+# predict on test set
+lux.randf.pred <- predict(lux.randomf,
+                            testing.df,
+                            type="class")
+
+# generate confusion matrix
+confusionMatrix(table(lux.randf.pred,
+                      testing.df$RISK),
+                positive = "1")
+
+# Obtain ROC for random forest
+lux.randf.pred.prob <- predict(lux.randomf,
+                                 testing.df,
+                                 type = "prob")
+randf.combined = cbind(testing.df, lux.randf.pred.prob)
+
+lux.randf.ROC<-plot.roc(randf.combined$RISK,
+                    randf.combined$`1`,
+                    main = "ROC for randf")
+print(lux.randf.ROC) # Display ROC curve of random forest model
+
+# Build a C5.0 tree with rules
+lux.c5.rules<-C5.0(as.factor(RISK)~.,
+               data = training.df,
+             rules = TRUE)
+
+# Show the rules the C5.0 tree is built on
+summary(lux.c5.rules)
+
+# predict on test set
+lux.c5.pred <- predict(lux.c5, 
+                       testing.df,
+                       type="class")
+
+# generate confusion matrix
+confusionMatrix(table(lux.c5.pred,
+                      testing.df$RISK),
+                positive = "1")
+
+# Obtain ROC for C5.0 
+lux.c5.pred.prob <- predict(lux.c5,
+                                 testing.df,
+                                 type = "prob")
+c5.combined = cbind(testing.df, lux.c5.pred.prob)
+
+lux.c5.ROC<-plot.roc(c5.combined$RISK,
+                    c5.combined$`1`,
+                    main = "ROC for c5")
+print(lux.c5.ROC) # Display ROC curve of c5 model
+
+```
+
+
+
+
+15. XGBoost
+```{r}
+#install.packages("xgboost")
+library(xgboost)
+
+params <- list(max_depth=5,
+               eta=0.2,
+               gamma=10,
+               min_child_weight = 20,
+               objective = "binary:logistic")
+
+xgbCV <- xgb.cv(params=params,
+                data=data.matrix(training.df[, -8]),
+                label=training.df$RISK,
+                nrounds=100,
+                eval_metric="auc",
+                nfold=10,
+                stratified=TRUE)
+
+numTrees <- min(which(xgbCV$evaluation_log$test_auc_mean == 
+                      max(xgbCV$evaluation_log$test_auc_mean)))
+
+fit4 <- xgboost(params=params,
+                data = data.matrix(testing.df[, -8]),
+                label = testing.df$RISK,
+                nrounds = numTrees,
+                eval_metric="auc")
+
+# Display relative importance of variables for prediction
+xgb.train.data = xgb.DMatrix(data.matrix(training.df[, -8]), label = training.df$RISK, missing = NA)
+xgb.test.data = xgb.DMatrix(data.matrix(testing.df[, -8]), label = testing.df$RISK, missing = NA)
+col_names = attr(xgb.train.data, ".Dimnames")[[2]]
+imp = xgb.importance(col_names, fit4)
+print("Model Importance")
+xgb.plot.importance(imp)
+
+# Usual AUC calculation
+library(ROCR)
+pred.xgb <- predict(fit4, data.matrix(testing.df[, -8]), type="response")
+ROCpred.xgb <- prediction(as.numeric(pred.xgb), as.numeric(testing.df$RISK))
+ROCperf.xgb <- performance(ROCpred.xgb, 'tpr','fpr')
+#plot(ROCperf.xgb)
+df_ROC.xgb <- data.frame(FalsePositive=c(ROCperf.xgb@x.values[[1]]),
+                 TruePositive=c(ROCperf.xgb@y.values[[1]]))
+ggplot() +
+  geom_line(data=df_ROC.xgb, aes(x=FalsePositive, y=TruePositive, color="XGBoost")) + 
+  geom_abline(slope=1) + ggtitle("ROC Curves across models")
+
+auc.xgb <- performance(ROCpred.xgb, measure = "auc")
+auc <- auc.xgb@y.values[[1]]
+names(auc) <- c("XGBoost AUC")
+auc
+
+pred.class.xgb <- c(rep(0, nrow(testing.df)))
+pred.class.xgb[pred.xgb > 0.5] = 1
+
+confusionMatrix(table(pred.class.xgb,
+                      testing.df$RISK),
+                positive = "1")
+
+```
+
+16. Logistic Regression
+```{r}
+#Logistic regression
+
+logit <- glm(RISK ~., family = binomial(link = "logit"), data = training.df)
+
+# predict on test set
+logit.pred <- predict(logit,
+                      testing.df,
+                      type = "response")
+
+# generate confusion matrix
+confusionMatrix(table(logit.pred >= 0.5,
+                      testing.df$RISK == 1),
+                positive="TRUE")
+
+# Obtain ROC for Logistic Regression
+logit.combined = cbind(testing.df, logit.pred)
+
+lux.logit.ROC<-plot.roc(logit.combined$RISK,
+                    logit.combined$logit.pred,
+                    main = "ROC for logit")
+print(lux.logit.ROC) # Display ROC curve of logit model
+
+```
+
+17. SVM
+```{r}
+#SVm
+lux.svm <- svm(RISK ~., data = training.df)
+
+# predict on test set
+lux.svm.pred <- predict(lux.svm,
+                      testing.df,
+                      type = "response")
+
+# generate confusion matrix
+confusionMatrix(table(lux.svm.pred > 0.5,
+                      testing.df$RISK == 1),
+                positive="TRUE")
+
+# Obtain ROC for SVM
+lux.svm.combined = cbind(testing.df, lux.svm.pred)
+
+lux.svm.ROC<-plot.roc(lux.svm.combined$RISK,
+                    lux.svm.combined$lux.svm.pred,
+                    main = "ROC for svm")
+print(lux.svm.ROC) # Display ROC curve of svm model
+```
+
+18. Neural Network
+```{r}
+# Create a neural network with one hidden layer of 10 neurons
+lux.nn <- neuralnet(RISK ~., data = training.df, hidden=10, lifesign="full", rep=1, threshold=0.5)
+
+plot(lux.nn)
+
+# predict on test set
+lux.nn.pred <- predict(lux.nn,
+                      testing.df[, -8],
+                      type="class")
+
+# generate confusion matrix
+confusionMatrix(table(lux.nn.pred > 0.5,
+                      testing.df$RISK == 1))
+
+# Obtain ROC for neural net
+lux.nn.combined = cbind(testing.df, lux.nn.pred)
+
+lux.nn.ROC<-plot.roc(lux.nn.combined$RISK,
+                    lux.nn.combined$lux.nn.pred,
+                    main = "ROC for nn")
+print(lux.nn.ROC) # Display ROC curve of nn model
+```
+
+
+

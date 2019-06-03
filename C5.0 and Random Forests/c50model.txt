@@ -1,0 +1,285 @@
+
+Call:
+C5.0.formula(formula = as.factor(FlashDeal) ~ ., data = geniefd.df.train, rules = TRUE)
+
+
+C5.0 [Release 2.07 GPL Edition]  	Tue Apr  2 15:00:22 2019
+-------------------------------
+
+Class specified by attribute `outcome'
+
+Read 1179 cases (6 attributes) from undefined.data
+
+Rules:
+
+Rule 1: (8, lift 2.0)
+	Categories = Media-Entertainment
+	Currency = USD
+	RetailerPts <= 6011
+	DaysInBasket > 4
+	SalePrice <= 19.99
+	->  class 0  [0.900]
+
+Rule 2: (7, lift 2.0)
+	Categories = Collectibles-Hobbies
+	Currency in {GBP, USD}
+	RetailerPts > 3329
+	SalePrice <= 19.99
+	->  class 0  [0.889]
+
+Rule 3: (22/2, lift 2.0)
+	RetailerPts <= 6011
+	SalePrice > 12.24
+	SalePrice <= 12.45
+	->  class 0  [0.875]
+
+Rule 4: (6, lift 2.0)
+	Categories = Bags
+	RetailerPts <= 1917
+	DaysInBasket <= 4
+	SalePrice <= 19.99
+	->  class 0  [0.875]
+
+Rule 5: (38/4, lift 2.0)
+	Currency in {GBP, USD}
+	RetailerPts <= 6653
+	SalePrice <= 11.83
+	->  class 0  [0.875]
+
+Rule 6: (6, lift 2.0)
+	Categories = Media-Entertainment
+	RetailerPts <= 6011
+	DaysInBasket > 4
+	SalePrice <= 15.95
+	->  class 0  [0.875]
+
+Rule 7: (6, lift 2.0)
+	Categories = Media-Entertainment
+	Currency = SGD
+	RetailerPts > 2037
+	RetailerPts <= 6011
+	SalePrice <= 19.99
+	->  class 0  [0.875]
+
+Rule 8: (6, lift 2.0)
+	Categories = VideoGames
+	RetailerPts > 6557
+	DaysInBasket > 3
+	SalePrice > 26.81
+	SalePrice <= 47
+	->  class 0  [0.875]
+
+Rule 9: (5, lift 1.9)
+	Categories = Clothing
+	SalePrice > 18.28
+	SalePrice <= 19.99
+	->  class 0  [0.857]
+
+Rule 10: (5, lift 1.9)
+	Categories = VideoGames
+	RetailerPts <= 6011
+	DaysInBasket > 4
+	SalePrice <= 17.38
+	->  class 0  [0.857]
+
+Rule 11: (5, lift 1.9)
+	Categories = Books
+	DaysInBasket <= 3
+	SalePrice <= 47
+	->  class 0  [0.857]
+
+Rule 12: (5, lift 1.9)
+	Categories = Beauty-PersonalCare
+	Currency = USD
+	->  class 0  [0.857]
+
+Rule 13: (10/1, lift 1.9)
+	Categories = Clothing
+	Currency = USD
+	RetailerPts > 1917
+	RetailerPts <= 6557
+	DaysInBasket > 3
+	SalePrice > 19.99
+	->  class 0  [0.833]
+
+Rule 14: (4, lift 1.9)
+	Categories = Jewellery-Accessories
+	Currency = USD
+	RetailerPts <= 2069
+	->  class 0  [0.833]
+
+Rule 15: (138/24, lift 1.8)
+	Categories in {Beauty-PersonalCare, Car-Accessories,
+                       Jewellery-Accessories, Miscellaneous}
+	Currency = SGD
+	RetailerPts > 157
+	SalePrice <= 127.5
+	->  class 0  [0.821]
+
+Rule 16: (58/10, lift 1.8)
+	SalePrice <= 11.23
+	->  class 0  [0.817]
+
+Rule 17: (53/12, lift 1.7)
+	Categories in {Beauty-PersonalCare, Car-Accessories,
+                       Jewellery-Accessories, Miscellaneous}
+	RetailerPts > 3297
+	DaysInBasket <= 3
+	->  class 0  [0.764]
+
+Rule 18: (142/38, lift 1.6)
+	RetailerPts > 6653
+	SalePrice > 11.23
+	SalePrice <= 19.99
+	->  class 0  [0.729]
+
+Rule 19: (965/482, lift 1.1)
+	SalePrice <= 47
+	->  class 0  [0.501]
+
+Rule 20: (96/3, lift 1.7)
+	Categories = Media-Entertainment
+	RetailerPts > 911
+	RetailerPts <= 6653
+	DaysInBasket <= 3
+	SalePrice > 11.23
+	->  class 1  [0.959]
+
+Rule 21: (22, lift 1.7)
+	RetailerPts > 6011
+	RetailerPts <= 6653
+	SalePrice > 16
+	SalePrice <= 19.99
+	->  class 1  [0.958]
+
+Rule 22: (22, lift 1.7)
+	SalePrice > 19.99
+	SalePrice <= 20.55
+	->  class 1  [0.958]
+
+Rule 23: (55/2, lift 1.7)
+	Categories in {Bags, Clothing}
+	Currency = SGD
+	RetailerPts <= 6653
+	SalePrice > 13.7
+	->  class 1  [0.947]
+
+Rule 24: (15, lift 1.7)
+	Categories = VideoGames
+	SalePrice > 19.99
+	SalePrice <= 24.5
+	->  class 1  [0.941]
+
+Rule 25: (37/2, lift 1.7)
+	Categories = Media-Entertainment
+	RetailerPts <= 6557
+	SalePrice > 19.99
+	SalePrice <= 44.19
+	->  class 1  [0.923]
+
+Rule 26: (23/1, lift 1.7)
+	SalePrice > 127.5
+	SalePrice <= 173
+	->  class 1  [0.920]
+
+Rule 27: (157/12, lift 1.7)
+	Categories in {Bags, Books, Clothing, Collectibles-Hobbies,
+                       Computer-Electronics, Home-Living, Media-Entertainment,
+                       Photography, Sports-Outdoors, Travel, VideoGames}
+	SalePrice > 47
+	->  class 1  [0.918]
+
+Rule 28: (10, lift 1.7)
+	Categories in {Car-Accessories, Miscellaneous}
+	RetailerPts <= 157
+	SalePrice > 19.99
+	->  class 1  [0.917]
+
+Rule 29: (20/1, lift 1.6)
+	Categories in {Computer-Electronics, Home-Living}
+	Currency in {GBP, USD}
+	SalePrice > 12.45
+	SalePrice <= 19.99
+	->  class 1  [0.909]
+
+Rule 30: (63/5, lift 1.6)
+	DaysInBasket > 2
+	SalePrice > 127.5
+	->  class 1  [0.908]
+
+Rule 31: (110/10, lift 1.6)
+	Categories in {Collectibles-Hobbies, Computer-Electronics,
+                       Sports-Outdoors, Travel}
+	RetailerPts <= 6557
+	SalePrice > 19.99
+	->  class 1  [0.902]
+
+Rule 32: (8, lift 1.6)
+	Categories = Books
+	DaysInBasket > 3
+	SalePrice > 19.99
+	->  class 1  [0.900]
+
+Rule 33: (7, lift 1.6)
+	Currency in {GBP, USD}
+	DaysInBasket <= 4
+	SalePrice > 11.83
+	SalePrice <= 12.24
+	->  class 1  [0.889]
+
+Rule 34: (56/6, lift 1.6)
+	Currency in {GBP, USD}
+	RetailerPts <= 301
+	DaysInBasket <= 4
+	SalePrice > 12.45
+	->  class 1  [0.879]
+
+Rule 35: (64/8, lift 1.6)
+	Categories in {Sports-Outdoors, Travel}
+	SalePrice > 19.99
+	->  class 1  [0.864]
+
+Rule 36: (18/3, lift 1.4)
+	Categories = VideoGames
+	DaysInBasket <= 3
+	SalePrice > 26.01
+	->  class 1  [0.800]
+
+Rule 37: (123/38, lift 1.2)
+	DaysInBasket > 4
+	SalePrice > 12.45
+	->  class 1  [0.688]
+
+Rule 38: (309/126, lift 1.1)
+	Currency = USD
+	->  class 1  [0.592]
+
+Default class: 0
+
+
+Evaluation on training data (1179 cases):
+
+	        Rules     
+	  ----------------
+	    No      Errors
+
+	    38  174(14.8%)   <<
+
+
+	   (a)   (b)    <-classified as
+	  ----  ----
+	   467    60    (a): class 0
+	   114   538    (b): class 1
+
+
+	Attribute usage:
+
+	 99.58%	SalePrice
+	 59.20%	RetailerPts
+	 55.89%	Categories
+	 47.33%	Currency
+	 36.73%	DaysInBasket
+
+
+Time: 0.0 secs
+
